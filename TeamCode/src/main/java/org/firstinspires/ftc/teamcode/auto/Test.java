@@ -13,34 +13,40 @@ import com.acmerobotics.roadrunner.ftc.Actions;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.Gamepad;
+
+import org.firstinspires.ftc.teamcode.Constants;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 import org.firstinspires.ftc.teamcode.subsystem.PIDF_Arm;
-
-import com.acmerobotics.roadrunner.ParallelAction;
-
-import kotlin.contracts.Returns;
 
 @Config
 @Autonomous(name = "Test", group = "Autonomous")
 public class Test extends LinearOpMode {
 
-    public static class intake {
+    private static final PIDF_Arm pidfArm = new PIDF_Arm();
 
+    public static class intake {
         public static class Lift implements Action {
             private boolean initialized = false;
+            private Gamepad gamepad1;
 
             @Override
             public boolean run(@NonNull TelemetryPacket packet) {
                 if (!initialized) {
                     PIDF_Arm.armToIntakePos();
                     initialized = true;
-                    return false;
+                    packet.put("Action", "Lifting Arm");
+                } else {
+                    pidfArm.setControl(gamepad1);
+                    packet.put("Action", "Arm in Motion");
                 }
+
+                if (Math.abs(pidfArm.getUpperPos() - Constants.Arm.INTAKE[0]) < 10 &&
+                        Math.abs(pidfArm.getLowerPos() - Constants.Arm.INTAKE[1]) < 10) {
+                    packet.put("Action", "Arm at Position");
+                    return true;
+                }
+
                 return false;
             }
         }
@@ -50,44 +56,45 @@ public class Test extends LinearOpMode {
         }
     }
 
-
     @Override
     public void runOpMode() {
-        Pose2d initialPose = new Pose2d(-35, -60.4, Math.toRadians(90));
+        Pose2d initialPose = new Pose2d(35, -60.4, Math.toRadians(90));
         MecanumDrive drive = new MecanumDrive(hardwareMap, initialPose);
         Action trajectory;
 
+        pidfArm.init(hardwareMap);
 
         TrajectoryActionBuilder trajectory1 = drive.actionBuilder(initialPose)
-                .splineToLinearHeading(new Pose2d(35.0, -27.0, Math.toRadians(0)), Math.toRadians(90))
-                //pickup
-                .stopAndAdd(intake.intakePos())
-                .splineToLinearHeading(new Pose2d(54.0, -54.0, Math.toRadians(-45)), Math.toRadians(50))
-                //drop
-                .splineToLinearHeading(new Pose2d(44, -27, Math.toRadians(0)), Math.toRadians(50))
-                //PICKUP
-                .splineToLinearHeading(new Pose2d(54.0, -54.0, Math.toRadians(-45)), Math.toRadians(50))
-                //DROP
-                .splineToLinearHeading(new Pose2d(54.0, -54.0, Math.toRadians(0)), Math.toRadians(50))
-                //pickup
-                .splineToLinearHeading(new Pose2d(54.0, -27.0, Math.toRadians(0)), Math.toRadians(50))
-                //pickup
-                .splineToLinearHeading(new Pose2d(54.0, -54.0, Math.toRadians(-45)), Math.toRadians(50));
-        //drop
-
-
+                .setTangent(Math.toRadians(180))
+                .lineToX(45)
+                .lineToX(35)
+                .setTangent(Math.toRadians(90))
+                .lineToYLinearHeading(-13, Math.toRadians(0))
+                .strafeToLinearHeading(new Vector2d(45, -13), Math.toRadians(-90))
+                .setTangent(Math.toRadians(90))
+                .lineToY(-57)
+                .lineToY(-13)
+                .strafeToConstantHeading(new Vector2d(55, -13))
+                .setTangent(Math.toRadians(90))
+                .lineToY(-57)
+                .lineToY(-13)
+                .strafeToConstantHeading(new Vector2d(61, -13))
+                .setTangent(Math.toRadians(90))
+                .lineToY(-57);
 
         waitForStart();
-
 
         if (isStopRequested()) return;
 
         trajectory = trajectory1.build();
 
-        Actions.runBlocking(
-                new SequentialAction(
-                        trajectory
-                )
-        );
+        Actions.runBlocking(new SequentialAction(
+                trajectory,
+                intake.intakePos()
+        ));
+
+        while (opModeIsActive() && !intake.intakePos().run(new TelemetryPacket())) {
+            telemetry.update();
+        }
     }
 }
